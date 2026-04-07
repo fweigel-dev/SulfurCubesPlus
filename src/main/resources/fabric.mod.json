@@ -1,0 +1,36 @@
+{
+	"schemaVersion": 1,
+	"id": "sulfurcubesplus",
+	"version": "${version}",
+	"name": "Sulfur Cubes+",
+	"description": "Extends sulfur cube mechanics — starting with TNT absorption.",
+	"authors": [
+		"fweigel-dev"
+	],
+	"contact": {
+		"homepage": "",
+		"sources": ""
+	},
+	"license": "CC-BY-4.0",
+	"accessWidener": "sulfurcubesplus.accesswidener",
+	"icon": "assets/sulfurcubesplus/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"dev.fweigel.sulfurcubesplus.SulfurCubesPlus"
+		]
+	},
+	"mixins": [
+		"sulfurcubesplus.mixins.json",
+		{
+			"config": "sulfurcubesplus.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.0",
+		"minecraft": ">=26.2-alpha.1",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

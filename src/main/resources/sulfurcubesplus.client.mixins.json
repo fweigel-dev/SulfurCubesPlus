@@ -1,0 +1,14 @@
+{
+	"required": true,
+	"package": "dev.fweigel.sulfurcubesplus.mixin.client",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"SulfurCubeRenderStateMixin",
+		"SulfurCubeRendererMixin",
+		"SulfurCubeInnerLayerMixin",
+		"LivingEntityRendererMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

@@ -1,0 +1,30 @@
+{
+  "attribute_modifiers": [
+    {
+      "amount": 0.5,
+      "attribute": "minecraft:knockback_resistance",
+      "id": "sulfurcubesplus:explosive_add_knockback_resistance",
+      "operation": "add_value"
+    },
+    {
+      "amount": 0.1,
+      "attribute": "minecraft:bounciness",
+      "id": "sulfurcubesplus:explosive_add_bounciness",
+      "operation": "add_value"
+    },
+    {
+      "amount": -0.3,
+      "attribute": "minecraft:friction_modifier",
+      "id": "sulfurcubesplus:explosive_mul_friction_modifier",
+      "operation": "add_multiplied_total"
+    },
+    {
+      "amount": -0.95,
+      "attribute": "minecraft:air_drag_modifier",
+      "id": "sulfurcubesplus:explosive_mul_air_drag_modifier",
+      "operation": "add_multiplied_total"
+    }
+  ],
+  "buoyant": false,
+  "items": "#sulfurcubesplus:sulfur_cube_archetype/explosive"
+}
