@@ -12,6 +12,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.cubemob.SulfurCube;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
@@ -21,6 +22,15 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LightBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.damagesource.DamageType;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import java.util.List;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -40,6 +50,11 @@ public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder
     /** Tracks the block position where we last placed a light block, for cleanup on move/remove. */
     @Unique
     private BlockPos sulfurcubesplus$lastLightPos = null;
+
+    @Unique
+    private static final TagKey<DamageType> SULFURCUBESPLUS$CACTUS_PUSH = TagKey.create(
+            Registries.DAMAGE_TYPE,
+            Identifier.fromNamespaceAndPath("sulfurcubesplus", "cactus_push"));
 
     private static final int FUSE_TICKS = 40;   // 2 seconds, same as primed TNT
     private static final float EXPLOSION_POWER = 8.0f;
@@ -187,6 +202,94 @@ public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder
         if (level.getBlockState(pos).is(Blocks.LIGHT)) {
             level.removeBlock(pos, false);
         }
+    }
+
+    /**
+     * Each server tick: deal cactus damage (1 HP) to any living entity whose bounding box
+     * overlaps the SulfurCube when it carries a cactus. The entity's invincibility frames
+     * prevent this from firing more than once per ~0.5 s.
+     */
+    @Inject(method = "customServerAiStep", at = @At("HEAD"))
+    private void sulfurcubesplus$tickCactus(ServerLevel level, CallbackInfo ci) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+        if (bodyItem.isEmpty() || !bodyItem.is(Items.CACTUS)) {
+            return;
+        }
+
+        AABB box = self.getBoundingBox();
+        List<LivingEntity> nearby = level.getEntitiesOfClass(LivingEntity.class, box, e -> e != self);
+        for (LivingEntity entity : nearby) {
+            entity.hurt(level.damageSources().cactus(), 1.0f);
+            // SulfurCubes are immune to cactus damage when carrying a block, and even
+            // non-immune cubes get no knockback since cactus has no attacker entity.
+            // Push any neighbouring SulfurCube away explicitly.
+            if (entity instanceof SulfurCube) {
+                Vec3 pushDir = entity.position().subtract(self.position());
+                if (pushDir.lengthSqr() > 1e-6) {
+                    double strength = Math.max(0.0, 1.0 - entity.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE)) * 0.6;
+                    entity.addDeltaMovement(pushDir.normalize().scale(strength));
+                }
+            }
+        }
+    }
+
+    /**
+     * When a cactus-carrying SulfurCube is hit, the attacker takes cactus damage (1 HP) —
+     * as if they had run into a placed cactus block.
+     */
+    @Inject(method = "hurtServer", at = @At("HEAD"))
+    private void sulfurcubesplus$cactusRetaliationOnHurt(
+            ServerLevel level, DamageSource source, float amount,
+            CallbackInfoReturnable<Boolean> cir) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+        if (bodyItem.isEmpty() || !bodyItem.is(Items.CACTUS)) {
+            return;
+        }
+
+        Entity attacker = source.getDirectEntity();
+        if (attacker instanceof LivingEntity livingAttacker) {
+            livingAttacker.hurt(level.damageSources().cactus(), 1.0f);
+        }
+    }
+
+    /**
+     * When a cactus-carrying cube touches a placed cactus block it receives cactus damage but
+     * vanilla skips the push (only Player hits trigger playerHit). This injection replicates the
+     * same applyKnockback logic — push away from the cactus block that caused the damage.
+     */
+    @Inject(method = "hurtServer", at = @At("HEAD"))
+    private void sulfurcubesplus$cactusKnockback(
+            ServerLevel level, DamageSource source, float amount,
+            CallbackInfoReturnable<Boolean> cir) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        if (!self.hasBodyItem()) return;
+        if (!source.is(SULFURCUBESPLUS$CACTUS_PUSH)) return;
+
+        // Scan the cube's block position and all 6 neighbours for a cactus block and
+        // accumulate a push direction away from each one found.
+        BlockPos cubePos = self.blockPosition();
+        Vec3 push = Vec3.ZERO;
+        for (Direction dir : Direction.values()) {
+            if (level.getBlockState(cubePos.relative(dir)).is(Blocks.CACTUS)) {
+                push = push.add(dir.getOpposite().getUnitVec3());
+            }
+        }
+        // Also check the cube's own position in case blockPosition() sits inside the cactus.
+        if (level.getBlockState(cubePos).is(Blocks.CACTUS)) {
+            Vec3 movement = self.getDeltaMovement();
+            if (movement.horizontalDistanceSqr() > 1e-6) {
+                push = push.add(new Vec3(-movement.x, 0.0, -movement.z).normalize());
+            }
+        }
+
+        if (push.lengthSqr() < 1e-6) return;
+
+        double strength = Math.sqrt(amount)
+                * Math.max(0.0, 1.0 - self.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE))
+                * 0.6;
+        self.addDeltaMovement(push.normalize().scale(strength));
     }
 
     private static void triggerExplosion(SulfurCube cube, ServerLevel level) {

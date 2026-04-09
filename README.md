@@ -13,7 +13,7 @@
   </div>
 </div>
 
-## Feature(s)
+## Features
 
 ### TNT Cubes
 
@@ -36,11 +36,21 @@ Sulfur cubes that have absorbed a light-emitting block will now emit real light 
 Froglight · Pearlescent Froglight · Verdant Froglight
 
 <div align="left">
-  <img alt="No light emitted by Sulfur cubes without Sulfur Cubes+" src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/light_showcase_off.png" width="480" style="border-radius: 10px; margin: 6px;"/>
-  <img alt="Light emitted by Sulfur cubes with Sulfur Cubes+" src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/light_showcase_on.png" width="480" style="border-radius: 10px; margin: 6px;"/>
+  <img alt="No light emitted by Sulfur cubes without Sulfur Cubes+" src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/light_showcase_off.png" width="360" style="border-radius: 10px; margin: 6px;"/>
+  <img alt="Light emitted by Sulfur cubes with Sulfur Cubes+" src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/light_showcase_on.png" width="360" style="border-radius: 10px; margin: 6px;"/>
 </div>
 
 <img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/light_cubes_showcase.gif" width="600"/>
+
+---
+
+### Cactus Cubes
+
+Sulfur cubes can now absorb a cactus. A cactus cube damages any entity that touches it, just like walking into a placed cactus block. When hit, the attacker also takes cactus damage — as if they punched a real cactus. Other sulfur cubes that touch a cactus cube or a cactus block now get pushed away.
+
+<img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/cactus_cube.png" width="360" style="border-radius: 10px"/>
+
+<img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/cactus_showcase.gif" width="600"/>
 
 ---
 

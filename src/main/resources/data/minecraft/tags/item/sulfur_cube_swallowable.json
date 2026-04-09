@@ -1,6 +1,7 @@
 {
   "replace": false,
   "values": [
-    "#sulfurcubesplus:sulfur_cube_archetype/explosive"
+    "#sulfurcubesplus:sulfur_cube_archetype/explosive",
+    "#sulfurcubesplus:sulfur_cube_archetype/cactus"
   ]
 }
