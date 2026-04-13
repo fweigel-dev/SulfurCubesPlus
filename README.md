@@ -46,11 +46,26 @@ Froglight · Pearlescent Froglight · Verdant Froglight
 
 ### Cactus Cubes
 
-Sulfur cubes can now absorb a cactus. A cactus cube damages any entity that touches it, just like walking into a placed cactus block. When hit, the attacker also takes cactus damage — as if they punched a real cactus. Other sulfur cubes that touch a cactus cube or a cactus block now get pushed away.
+Sulfur cubes can now absorb a cactus. A cactus cube damages any entity that touches it, just like walking into a placed
+cactus block. When hit, the attacker also takes cactus damage — as if they punched a real cactus. Other sulfur cubes
+that touch a cactus cube or a cactus block now get pushed away.
 
 <img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/cactus_cube.png" width="360" style="border-radius: 10px"/>
 
 <img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/cactus_showcase.gif" width="600"/>
+
+---
+
+### Workstation Cubes
+
+Sulfur cubes can now absorb crafting workstations. Right-clicking opens the corresponding UI, for picking up the cube
+press shift + right-click.
+
+**Compatible blocks:** Crafting Table · Stonecutter · Grindstone · Smithing Table · Loom · Cartography Table · Anvil
+
+<img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/workstation_cubes.png" width="360" style="border-radius: 10px"/>
+
+<img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/workstation_showcase.gif" width="600" />
 
 ---
 

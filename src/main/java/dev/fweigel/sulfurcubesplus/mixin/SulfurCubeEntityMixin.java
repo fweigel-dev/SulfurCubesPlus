@@ -2,20 +2,34 @@ package dev.fweigel.sulfurcubesplus.mixin;
 
 import dev.fweigel.sulfurcubesplus.IFuseHolder;
 import dev.fweigel.sulfurcubesplus.ILightHolder;
+import dev.fweigel.sulfurcubesplus.ISulfurCubeAnvilMenu;
+import dev.fweigel.sulfurcubesplus.SulfurCubeEntityAccess;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.cubemob.SulfurCube;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AnvilMenu;
+import net.minecraft.world.inventory.CartographyTableMenu;
+import net.minecraft.world.inventory.CraftingMenu;
+import net.minecraft.world.inventory.GrindstoneMenu;
+import net.minecraft.world.inventory.LoomMenu;
+import net.minecraft.world.inventory.SmithingMenu;
+import net.minecraft.world.inventory.StonecutterMenu;
 import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
@@ -51,10 +65,19 @@ public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder
     @Unique
     private BlockPos sulfurcubesplus$lastLightPos = null;
 
+    /** Non-null while a player has a workstation UI open for this cube. */
+    @Unique
+    private SulfurCubeEntityAccess sulfurcubesplus$activeAccess = null;
+
     @Unique
     private static final TagKey<DamageType> SULFURCUBESPLUS$CACTUS_PUSH = TagKey.create(
             Registries.DAMAGE_TYPE,
             Identifier.fromNamespaceAndPath("sulfurcubesplus", "cactus_push"));
+
+    @Unique
+    private static final TagKey<Item> SULFURCUBESPLUS$SWALLOWABLE = TagKey.create(
+            Registries.ITEM,
+            Identifier.fromNamespaceAndPath("minecraft", "sulfur_cube_swallowable"));
 
     private static final int FUSE_TICKS = 40;   // 2 seconds, same as primed TNT
     private static final float EXPLOSION_POWER = 8.0f;
@@ -192,9 +215,19 @@ public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder
     /** Called via ServerEntityEvents.ENTITY_UNLOAD to clean up our light block on entity removal. */
     @Override
     public void sulfurcubesplus$cleanupLight(ServerLevel level) {
-        if (sulfurcubesplus$lastLightPos == null) return;
-        sulfurcubesplus$removeLightAt(level, sulfurcubesplus$lastLightPos);
-        sulfurcubesplus$lastLightPos = null;
+        if (sulfurcubesplus$lastLightPos != null) {
+            sulfurcubesplus$removeLightAt(level, sulfurcubesplus$lastLightPos);
+            sulfurcubesplus$lastLightPos = null;
+        }
+
+        // Also close any open workstation UI so items are returned before the entity disappears.
+        if (sulfurcubesplus$activeAccess != null) {
+            ServerPlayer player = sulfurcubesplus$activeAccess.player;
+            sulfurcubesplus$activeAccess = null;
+            if (player.containerMenu != player.inventoryMenu) {
+                player.closeContainer();
+            }
+        }
     }
 
     @Unique
@@ -290,6 +323,173 @@ public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder
                 * Math.max(0.0, 1.0 - self.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE))
                 * 0.6;
         self.addDeltaMovement(push.normalize().scale(strength));
+    }
+
+    /**
+     * When a player right-clicks a SulfurCube carrying a crafting-table-style block, open the
+     * corresponding UI. Items placed inside are returned to the player on close — the cube never
+     * stores data.
+     *
+     * Pass-through conditions (vanilla keeps full control):
+     *   - Sneak + right-click       → vanilla bucket capture (Bucketable.bucketMobPickup)
+     *   - Shears                    → vanilla shear (drops the body block)
+     *   - Baby cube                 → vanilla feeding
+     *   - Swallowable DIFFERENT item → vanilla equipItem (swaps body block)
+     *
+     * Same swallowable item as what is already equipped: vanilla equipItem returns false and
+     * PASS — falls through here to open the UI instead of doing nothing.
+     *
+     * IMPORTANT: the cancel must happen on BOTH sides. SulfurCube implements Bucketable and
+     * calls Bucketable.bucketMobPickup inside mobInteract. If we only cancel on the server,
+     * the client still runs the method and bucketMobPickup removes the entity client-side,
+     * causing the cube to visually disappear even though the server kept it alive.
+     */
+    @Inject(method = "mobInteract", at = @At("HEAD"), cancellable = true)
+    private void sulfurcubesplus$openFunctionalBlockUI(
+            Player player, InteractionHand hand,
+            CallbackInfoReturnable<InteractionResult> cir) {
+        // Only fire once — skip the off-hand call.
+        if (hand != InteractionHand.MAIN_HAND) return;
+
+        SulfurCube self = (SulfurCube) (Object) this;
+
+        // Sneak + right-click: pass through to vanilla (bucket capture etc.)
+        if (player.isShiftKeyDown()) return;
+
+        // Baby cube: pass through to vanilla (feeding)
+        if (self.isBaby()) return;
+
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+        if (bodyItem.isEmpty()) return;
+
+        ItemStack heldItem = player.getItemInHand(hand);
+
+        // Shears: pass through to vanilla (shearing drops the body item)
+        if (heldItem.is(Items.SHEARS)) return;
+
+        // Swallowable item that is DIFFERENT from what's already carried: pass through to
+        // vanilla so equipItem can swap the body block. Same item: fall through to open UI
+        // (vanilla equipItem returns false + PASS in that case — we do better).
+        if (!heldItem.isEmpty() && heldItem.is(SULFURCUBESPLUS$SWALLOWABLE)
+                && !heldItem.is(bodyItem.getItem())) {
+            return;
+        }
+
+        // Body item must map to a workstation menu; otherwise nothing to open.
+        if (!sulfurcubesplus$isWorkstationItem(bodyItem)) return;
+
+        // Cancel on BOTH client and server to prevent client-side Bucketable capture.
+        cir.setReturnValue(InteractionResult.SUCCESS);
+
+        // Only actually open the menu on the server.
+        if (self.level().isClientSide()) return;
+        if (!(player instanceof ServerPlayer serverPlayer)) return;
+
+        SulfurCubeEntityAccess access = new SulfurCubeEntityAccess(self, serverPlayer, bodyItem.getItem());
+
+        MenuProvider menu = null;
+
+        if (bodyItem.is(Items.CRAFTING_TABLE)) {
+            menu = new SimpleMenuProvider(
+                    (id, inv, p) -> new CraftingMenu(id, inv, access),
+                    Component.translatable("container.crafting"));
+        } else if (bodyItem.is(Items.STONECUTTER)) {
+            menu = new SimpleMenuProvider(
+                    (id, inv, p) -> new StonecutterMenu(id, inv, access),
+                    Component.translatable("container.stonecutter"));
+        } else if (bodyItem.is(Items.GRINDSTONE)) {
+            menu = new SimpleMenuProvider(
+                    (id, inv, p) -> new GrindstoneMenu(id, inv, access),
+                    Component.translatable("container.grindstone_title"));
+        } else if (bodyItem.is(Items.SMITHING_TABLE)) {
+            menu = new SimpleMenuProvider(
+                    (id, inv, p) -> new SmithingMenu(id, inv, access),
+                    Component.translatable("container.upgrade"));
+        } else if (bodyItem.is(Items.LOOM)) {
+            menu = new SimpleMenuProvider(
+                    (id, inv, p) -> new LoomMenu(id, inv, access),
+                    Component.translatable("container.loom"));
+        } else if (bodyItem.is(Items.CARTOGRAPHY_TABLE)) {
+            menu = new SimpleMenuProvider(
+                    (id, inv, p) -> new CartographyTableMenu(id, inv, access),
+                    Component.translatable("container.cartography_table"));
+        } else if (bodyItem.is(Items.ANVIL) || bodyItem.is(Items.CHIPPED_ANVIL) || bodyItem.is(Items.DAMAGED_ANVIL)) {
+            menu = new SimpleMenuProvider(
+                    (id, inv, p) -> new AnvilMenu(id, inv, access),
+                    Component.translatable("container.repair"));
+        }
+
+        if (menu != null) {
+            serverPlayer.openMenu(menu);
+            sulfurcubesplus$activeAccess = access;
+            // For anvil menus: store the entity access directly on the menu instance so
+            // AnvilMenuMixin can reach it without touching the access field (which would
+            // interfere with placed-anvil menus that use a real ContainerLevelAccess).
+            if (serverPlayer.containerMenu instanceof ISulfurCubeAnvilMenu anvilMenu) {
+                anvilMenu.sulfurcubesplus$setEntityAccess(access);
+            }
+        }
+    }
+
+    @Unique
+    private static boolean sulfurcubesplus$isWorkstationItem(ItemStack stack) {
+        return stack.is(Items.CRAFTING_TABLE) || stack.is(Items.STONECUTTER)
+                || stack.is(Items.GRINDSTONE) || stack.is(Items.SMITHING_TABLE)
+                || stack.is(Items.LOOM) || stack.is(Items.CARTOGRAPHY_TABLE)
+                || stack.is(Items.ANVIL) || stack.is(Items.CHIPPED_ANVIL)
+                || stack.is(Items.DAMAGED_ANVIL);
+    }
+
+    /**
+     * Each server tick: check whether the player who has a workstation UI open is still close
+     * enough to the cube and whether the cube still carries the expected body item. Closes the
+     * menu (returning any items inside) when either condition is violated. Also clears the
+     * tracking reference when the player closed the menu themselves.
+     */
+    @Inject(method = "customServerAiStep", at = @At("HEAD"))
+    private void sulfurcubesplus$tickMenuValidity(ServerLevel level, CallbackInfo ci) {
+        if (sulfurcubesplus$activeAccess == null) return;
+
+        SulfurCube self = (SulfurCube) (Object) this;
+        ServerPlayer player = sulfurcubesplus$activeAccess.player;
+
+        if (player.containerMenu == player.inventoryMenu) {
+            // Player already closed the menu on their own.
+            sulfurcubesplus$activeAccess = null;
+            return;
+        }
+
+        ItemStack currentBody = self.getItemBySlot(EquipmentSlot.BODY);
+        // Anvil variants (normal→chipped→damaged) count as the same workstation; only close
+        // when the anvil breaks completely (body slot becomes empty or changes to something else).
+        Item originalType = sulfurcubesplus$activeAccess.bodyItemType;
+        boolean originalWasAnvil = originalType == Items.ANVIL
+                || originalType == Items.CHIPPED_ANVIL
+                || originalType == Items.DAMAGED_ANVIL;
+        boolean bodyChanged = originalWasAnvil
+                ? !(currentBody.is(Items.ANVIL) || currentBody.is(Items.CHIPPED_ANVIL) || currentBody.is(Items.DAMAGED_ANVIL))
+                : !currentBody.is(originalType);
+        boolean tooFar = self.distanceToSqr(player) > 64.0; // 8-block range, same as vanilla
+
+        if (bodyChanged || tooFar) {
+            player.closeContainer(); // triggers menu.removed() → clearContainer → items returned
+            sulfurcubesplus$activeAccess = null;
+        }
+    }
+
+    /**
+     * Anvil-carrying cubes fall faster than normal (extra -0.08 m/t² while airborne and
+     * descending), mimicking the way placed anvil blocks crush entities below them.
+     */
+    @Inject(method = "customServerAiStep", at = @At("HEAD"))
+    private void sulfurcubesplus$anvilFallsFaster(ServerLevel level, CallbackInfo ci) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+        if (bodyItem.isEmpty()) return;
+        if (!bodyItem.is(Items.ANVIL) && !bodyItem.is(Items.CHIPPED_ANVIL) && !bodyItem.is(Items.DAMAGED_ANVIL)) return;
+        if (self.onGround()) return;
+        if (self.getDeltaMovement().y >= 0) return;
+        self.addDeltaMovement(new Vec3(0, -0.08, 0));
     }
 
     private static void triggerExplosion(SulfurCube cube, ServerLevel level) {

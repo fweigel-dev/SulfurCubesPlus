@@ -3,6 +3,7 @@
 	"package": "dev.fweigel.sulfurcubesplus.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"mixins": [
+		"AnvilMenuMixin",
 		"SulfurCubeEntityMixin"
 	],
 	"injectors": {
