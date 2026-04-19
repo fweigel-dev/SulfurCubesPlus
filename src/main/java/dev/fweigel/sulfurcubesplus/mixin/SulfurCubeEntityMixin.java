@@ -4,6 +4,7 @@ import dev.fweigel.sulfurcubesplus.IFuseHolder;
 import dev.fweigel.sulfurcubesplus.ILightHolder;
 import dev.fweigel.sulfurcubesplus.ISulfurCubeAnvilMenu;
 import dev.fweigel.sulfurcubesplus.SulfurCubeEntityAccess;
+import dev.fweigel.sulfurcubesplus.SulfurCubesPlus;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
@@ -64,6 +65,10 @@ public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder
     /** Tracks the block position where we last placed a light block, for cleanup on move/remove. */
     @Unique
     private BlockPos sulfurcubesplus$lastLightPos = null;
+
+    /** All positions where we currently have a phantom redstone block placed. */
+    @Unique
+    private java.util.Set<BlockPos> sulfurcubesplus$lastRedstonePositions = null;
 
     /** Non-null while a player has a workstation UI open for this cube. */
     @Unique
@@ -220,6 +225,13 @@ public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder
             sulfurcubesplus$lastLightPos = null;
         }
 
+        if (sulfurcubesplus$lastRedstonePositions != null) {
+            for (BlockPos pos : sulfurcubesplus$lastRedstonePositions) {
+                sulfurcubesplus$removeRedstoneAt(level, pos);
+            }
+            sulfurcubesplus$lastRedstonePositions = null;
+        }
+
         // Also close any open workstation UI so items are returned before the entity disappears.
         if (sulfurcubesplus$activeAccess != null) {
             ServerPlayer player = sulfurcubesplus$activeAccess.player;
@@ -233,6 +245,67 @@ public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder
     @Unique
     private static void sulfurcubesplus$removeLightAt(ServerLevel level, BlockPos pos) {
         if (level.getBlockState(pos).is(Blocks.LIGHT)) {
+            level.removeBlock(pos, false);
+        }
+    }
+
+    /**
+     * Each server tick: maintain phantom redstone blocks at every block position overlapped by
+     * the cube's bounding box. Covering the full bounding box means a size-2+ cube acts as a
+     * signal-15 source across all its physical blocks — so redstone dust that the cube body
+     * touches (even diagonally) gets powered, exactly matching how a piston-pushed Redstone
+     * Block would behave. New positions are placed before old ones are removed to keep the
+     * signal alive during movement. Observers fire on both old and new positions.
+     */
+    @Inject(method = "customServerAiStep", at = @At("HEAD"))
+    private void sulfurcubesplus$tickRedstone(ServerLevel level, CallbackInfo ci) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+        boolean carriesRedstone = !bodyItem.isEmpty() && bodyItem.is(Items.REDSTONE_BLOCK);
+
+        if (!carriesRedstone) {
+            if (sulfurcubesplus$lastRedstonePositions != null) {
+                for (BlockPos pos : sulfurcubesplus$lastRedstonePositions) {
+                    sulfurcubesplus$removeRedstoneAt(level, pos);
+                }
+                sulfurcubesplus$lastRedstonePositions = null;
+            }
+            return;
+        }
+
+        // Collect every air (or already-phantom) block position within the cube's bounding box.
+        AABB box = self.getBoundingBox();
+        BlockPos min = BlockPos.containing(box.minX + 1e-6, box.minY + 1e-6, box.minZ + 1e-6);
+        BlockPos max = BlockPos.containing(box.maxX - 1e-6, box.maxY - 1e-6, box.maxZ - 1e-6);
+        java.util.Set<BlockPos> wanted = new java.util.LinkedHashSet<>();
+        for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
+            BlockState existing = level.getBlockState(pos);
+            if (existing.isAir() || existing.is(SulfurCubesPlus.PHANTOM_REDSTONE_BLOCK)) {
+                wanted.add(pos.immutable());
+            }
+        }
+
+        if (wanted.equals(sulfurcubesplus$lastRedstonePositions)) return;
+
+        // Place new positions first (no signal gap), then remove positions no longer needed.
+        for (BlockPos pos : wanted) {
+            if (!level.getBlockState(pos).is(SulfurCubesPlus.PHANTOM_REDSTONE_BLOCK)) {
+                level.setBlock(pos, SulfurCubesPlus.PHANTOM_REDSTONE_BLOCK.defaultBlockState(), 3);
+            }
+        }
+        if (sulfurcubesplus$lastRedstonePositions != null) {
+            for (BlockPos old : sulfurcubesplus$lastRedstonePositions) {
+                if (!wanted.contains(old)) {
+                    sulfurcubesplus$removeRedstoneAt(level, old);
+                }
+            }
+        }
+        sulfurcubesplus$lastRedstonePositions = wanted.isEmpty() ? null : wanted;
+    }
+
+    @Unique
+    private static void sulfurcubesplus$removeRedstoneAt(ServerLevel level, BlockPos pos) {
+        if (level.getBlockState(pos).is(SulfurCubesPlus.PHANTOM_REDSTONE_BLOCK)) {
             level.removeBlock(pos, false);
         }
     }

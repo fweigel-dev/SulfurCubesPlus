@@ -69,4 +69,15 @@ press shift + right-click.
 
 ---
 
+### Redstone Cubes
+
+Sulfur cubes can now absorb a Redstone Block. The cube acts as a live redstone signal source,
+powering adjacent redstone components in all six directions, like a placed Redstone
+Block.
+
+
+<img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/redstone_showcase.gif" width="600"/>
+
+---
+
 Support for more blocks coming in the future
