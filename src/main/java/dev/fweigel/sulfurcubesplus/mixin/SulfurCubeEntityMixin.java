@@ -273,15 +273,22 @@ public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder
             return;
         }
 
-        // Collect every air (or already-phantom) block position within the cube's bounding box.
+        // Collect block positions the cube meaningfully occupies: only those whose CENTER
+        // falls strictly inside the bounding box. This requires the cube to cover more than
+        // half of that block, preventing ghost-powering from a 0.01-block edge clip.
         AABB box = self.getBoundingBox();
-        BlockPos min = BlockPos.containing(box.minX + 1e-6, box.minY + 1e-6, box.minZ + 1e-6);
-        BlockPos max = BlockPos.containing(box.maxX - 1e-6, box.maxY - 1e-6, box.maxZ - 1e-6);
+        BlockPos min = BlockPos.containing(box.minX, box.minY, box.minZ);
+        BlockPos max = BlockPos.containing(box.maxX, box.maxY, box.maxZ);
         java.util.Set<BlockPos> wanted = new java.util.LinkedHashSet<>();
         for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
-            BlockState existing = level.getBlockState(pos);
-            if (existing.isAir() || existing.is(SulfurCubesPlus.PHANTOM_REDSTONE_BLOCK)) {
-                wanted.add(pos.immutable());
+            double cx = pos.getX() + 0.5, cy = pos.getY() + 0.5, cz = pos.getZ() + 0.5;
+            if (cx > box.minX && cx < box.maxX
+                    && cy > box.minY && cy < box.maxY
+                    && cz > box.minZ && cz < box.maxZ) {
+                BlockState existing = level.getBlockState(pos);
+                if (existing.isAir() || existing.is(SulfurCubesPlus.PHANTOM_REDSTONE_BLOCK)) {
+                    wanted.add(pos.immutable());
+                }
             }
         }
 
