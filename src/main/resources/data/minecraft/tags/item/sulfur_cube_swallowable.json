@@ -4,6 +4,7 @@
     "#sulfurcubesplus:sulfur_cube_archetype/explosive",
     "#sulfurcubesplus:sulfur_cube_archetype/cactus",
     "#sulfurcubesplus:sulfur_cube_archetype/workstation",
-    "#sulfurcubesplus:sulfur_cube_archetype/redstone"
+    "#sulfurcubesplus:sulfur_cube_archetype/redstone",
+    "#sulfurcubesplus:sulfur_cube_archetype/dried_ghast"
   ]
 }

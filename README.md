@@ -80,4 +80,25 @@ Block.
 
 ---
 
+### Ghast Cubes
+
+Sulfur cubes can now absorb a **Dried Ghast**. Submerge the cube in water to hydrate it.
+
+<img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/ghast_cube_feed.gif" width="600"/>
+
+Once fully hydrated, the Dried Ghast comes to life: a baby **Happy Ghast** spawns and the cube enters
+**Ghast Soul Mode**, wrapping around the ghastling as a translucent soul shell. The cube grows with
+the ghast as it matures into an adult.
+
+<img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/ghast_cube_hydration.gif" width="600"/>
+
+<img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/ghast_cube_soul_mode.gif" width="600"/>
+
+Use **Shears** on the cube to free the ghast at any time. This way you can obtain a tier 4 sized sulfur cube.
+A cube that has already completed a soul cycle cannot re-hydrate.
+
+<img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/ghast_cube_shear.gif" width="600"/>
+
+---
+
 Support for more blocks coming in the future
