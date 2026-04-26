@@ -82,6 +82,11 @@ Block.
 
 ### Ghast Cubes
 
+Inspired by [u/Jakeroni5](https://www.reddit.com/user/Jakeroni5/) ([original post](https://www.reddit.com/r/PhoenixSC/comments/1sml267/an_iq_too_high/))
+
+<img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/ghast_inspiration.png" width="360" style="border-radius: 10px"/>
+
+</br>
 Sulfur cubes can now absorb a **Dried Ghast**. Submerge the cube in water to hydrate it.
 
 <img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/ghast_cube_feed.gif" width="600"/>
