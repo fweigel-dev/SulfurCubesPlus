@@ -1,6 +1,5 @@
 package dev.fweigel.sulfurcubesplus.mixin.client;
 
-import dev.fweigel.sulfurcubesplus.IFuseRenderState;
 import dev.fweigel.sulfurcubesplus.IGhastSoulRenderState;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -10,23 +9,10 @@ import org.spongepowered.asm.mixin.Unique;
 
 @Mixin(SulfurCubeRenderState.class)
 @Environment(EnvType.CLIENT)
-public class SulfurCubeRenderStateMixin implements IFuseRenderState, IGhastSoulRenderState {
-
-    @Unique
-    private int sulfurcubesplus$fuseTicks = -1;
+public class SulfurCubeRenderStateMixin implements IGhastSoulRenderState {
 
     @Unique
     private boolean sulfurcubesplus$ghastSoulMode = false;
-
-    @Override
-    public int sulfurcubesplus$getFuseTicks() {
-        return sulfurcubesplus$fuseTicks;
-    }
-
-    @Override
-    public void sulfurcubesplus$setFuseTicks(int ticks) {
-        sulfurcubesplus$fuseTicks = ticks;
-    }
 
     @Override
     public boolean sulfurcubesplus$isGhastSoulMode() {

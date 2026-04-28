@@ -5,8 +5,7 @@
 	"mixins": [
 		"SulfurCubeRenderStateMixin",
 		"SulfurCubeRendererMixin",
-		"SulfurCubeInnerLayerMixin",
-		"LivingEntityRendererMixin"
+		"SulfurCubeInnerLayerMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

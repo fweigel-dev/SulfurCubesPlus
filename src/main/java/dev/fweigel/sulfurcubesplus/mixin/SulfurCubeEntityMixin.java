@@ -1,6 +1,5 @@
 package dev.fweigel.sulfurcubesplus.mixin;
 
-import dev.fweigel.sulfurcubesplus.IFuseHolder;
 import dev.fweigel.sulfurcubesplus.IGhastSoulHolder;
 import dev.fweigel.sulfurcubesplus.ILightHolder;
 import dev.fweigel.sulfurcubesplus.ISulfurCubeAnvilMenu;
@@ -10,9 +9,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.syncher.EntityDataAccessor;
-import net.minecraft.network.syncher.EntityDataSerializers;
-import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -43,7 +39,6 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.BlockItemStateProperties;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DriedGhastBlock;
 import net.minecraft.world.level.block.LightBlock;
@@ -55,6 +50,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.damagesource.DamageType;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -64,17 +60,12 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(SulfurCube.class)
-public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder, IGhastSoulHolder {
-
-    // Registered as part of SulfurCube's static init (mixin static fields merge in).
-    // ID is assigned after all vanilla SulfurCube IDs.
-    @Unique
-    private static final EntityDataAccessor<Integer> SULFURCUBESPLUS$FUSE =
-            SynchedEntityData.defineId(SulfurCube.class, EntityDataSerializers.INT);
+public abstract class SulfurCubeEntityMixin implements ILightHolder, IGhastSoulHolder {
 
     /** Tracks the block position where we last placed a light block, for cleanup on move/remove. */
     @Unique
@@ -117,9 +108,6 @@ public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder
     private static final TagKey<Item> SULFURCUBESPLUS$SWALLOWABLE = TagKey.create(
             Registries.ITEM,
             Identifier.fromNamespaceAndPath("minecraft", "sulfur_cube_swallowable"));
-
-    private static final int FUSE_TICKS = 40;   // 2 seconds, same as primed TNT
-    private static final float EXPLOSION_POWER = 8.0f;
 
     // ── IGhastSoulHolder ──────────────────────────────────────────────────────
 
@@ -164,58 +152,20 @@ public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder
         }
     }
 
-    // ── Synced fuse data ──────────────────────────────────────────────────────
-
-    @Inject(method = "defineSynchedData", at = @At("TAIL"))
-    private void sulfurcubesplus$defineFuseData(SynchedEntityData.Builder builder, CallbackInfo ci) {
-        builder.define(SULFURCUBESPLUS$FUSE, -1);
-    }
-
-    // IFuseHolder — lets the client renderer read the synced fuse value
-    @Override
-    public int sulfurcubesplus$getFuseTicks() {
-        return ((Entity)(Object)this).entityData.get(SULFURCUBESPLUS$FUSE);
-    }
-
-    /** Any damage on a TNT-carrying cube starts the fuse; ignores further hits while lit. */
-    @Inject(method = "hurtServer", at = @At("HEAD"), cancellable = true)
+    /** Any damage on a TNT-carrying cube starts the fuse; vanilla handles knockback. */
+    @Inject(method = "hurtServer", at = @At("HEAD"))
     private void sulfurcubesplus$startFuseOnDamage(
             ServerLevel level, DamageSource source, float amount,
             CallbackInfoReturnable<Boolean> cir) {
         SulfurCube self = (SulfurCube) (Object) this;
-
-        if (self.isRemoved()) {
-            cir.setReturnValue(false);
-            return;
-        }
 
         ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
         if (bodyItem.isEmpty() || !bodyItem.is(Items.TNT)) {
             return;
         }
 
-        if (((Entity)(Object)this).entityData.get(SULFURCUBESPLUS$FUSE) >= 0) {
-            cir.setReturnValue(false);
-            return;
-        }
-
-        ((Entity)(Object)this).entityData.set(SULFURCUBESPLUS$FUSE, FUSE_TICKS);
-        cir.setReturnValue(true);
-    }
-
-    /** Counts the fuse down each server tick and detonates at zero. */
-    @Inject(method = "customServerAiStep", at = @At("HEAD"))
-    private void sulfurcubesplus$tickFuse(ServerLevel level, CallbackInfo ci) {
-        int ticks = ((Entity)(Object)this).entityData.get(SULFURCUBESPLUS$FUSE);
-        if (ticks < 0) {
-            return;
-        }
-
-        int next = ticks - 1;
-        ((Entity)(Object)this).entityData.set(SULFURCUBESPLUS$FUSE, next);
-
-        if (next <= 0) {
-            triggerExplosion((SulfurCube) (Object) this, level);
+        if (!self.isPrimed()) {
+            self.primeTime(source.is(DamageTypeTags.IS_EXPLOSION));
         }
     }
 
@@ -240,13 +190,13 @@ public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder
             return;
         }
 
-        if (((Entity)(Object)this).entityData.get(SULFURCUBESPLUS$FUSE) >= 0) {
+        if (self.isPrimed()) {
             cir.setReturnValue(InteractionResult.PASS);
             return;
         }
 
         handItem.hurtAndBreak(1, player, hand);
-        ((Entity)(Object)this).entityData.set(SULFURCUBESPLUS$FUSE, FUSE_TICKS);
+        self.primeTime(false);
         cir.setReturnValue(InteractionResult.SUCCESS);
     }
 
@@ -897,16 +847,16 @@ public abstract class SulfurCubeEntityMixin implements IFuseHolder, ILightHolder
         }
     }
 
-    private static void triggerExplosion(SulfurCube cube, ServerLevel level) {
-        cube.discard();
-        level.explode(
-                cube,
-                cube.getX(),
-                cube.getY(),
-                cube.getZ(),
-                EXPLOSION_POWER,
-                false,
-                Level.ExplosionInteraction.TNT
-        );
+    @ModifyArg(
+            method = "tickFuse()V",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/server/level/ServerLevel;explode(Lnet/minecraft/world/entity/Entity;DDDFLnet/minecraft/world/level/Level$ExplosionInteraction;)V"),
+            index = 4
+    )
+    private float sulfurcubesplus$sizeScaledExplosion(float power) {
+        int size = ((SulfurCube)(Object)this).getSize();
+        if (size <= 2) return power;
+        return power * (float)Math.pow(size / 2.0, 1.5);
     }
+
 }

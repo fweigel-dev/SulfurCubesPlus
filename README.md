@@ -17,13 +17,14 @@
 
 ### TNT Cubes
 
-Sulfur cubes can now absorb TNT. When damaged or ignited with flint and steel, the fuse lights and the cube explodes.
+As of 26.2 snapshot 5, **Mojang added TNT support for sulfur cubes it to the game themselves**. Good job Mojang! 🎉
 
-Inspired by [u/TheJoeFly](https://www.reddit.com/user/TheJoeFly/) ([original post](https://www.reddit.com/r/PhoenixSC/comments/1s03lww/now_the_important_question_will_we_be_able_to/))
+The original feature for this mod was inspired by [u/TheJoeFly](https://www.reddit.com/user/TheJoeFly/) ([original post](https://www.reddit.com/r/PhoenixSC/comments/1s03lww/now_the_important_question_will_we_be_able_to/))
 
 <img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/tnt_inspiration.png" width="360" style="border-radius: 10px"/>
 
-</br>
+From v0.7.0 onward this mod uses the vanilla implementation. The only additions on top are: the fuse triggers on any direct hit, and the bigger the cube, the bigger the boom. A Sulfur Nuke is now possible. But how would you even get a cube that big?
+
 <img src="https://raw.githubusercontent.com/fweigel-dev/SulfurCubesPlus/refs/heads/main/README/tnt_showcase.gif" width="600"/>
 
 ---
