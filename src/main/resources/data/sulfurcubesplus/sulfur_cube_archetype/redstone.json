@@ -1,5 +1,9 @@
 {
   "attribute_modifiers": [],
   "buoyant": false,
-  "items": "#sulfurcubesplus:sulfur_cube_archetype/redstone"
+  "items": "#sulfurcubesplus:sulfur_cube_archetype/redstone",
+  "knockback_modifiers": {
+    "horizontal_power": 0.33,
+    "vertical_power": 0.06
+  }
 }

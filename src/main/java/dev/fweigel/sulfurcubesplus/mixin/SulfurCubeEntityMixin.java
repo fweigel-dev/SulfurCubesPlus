@@ -850,8 +850,8 @@ public abstract class SulfurCubeEntityMixin implements ILightHolder, IGhastSoulH
     @ModifyArg(
             method = "tickFuse()V",
             at = @At(value = "INVOKE",
-                    target = "Lnet/minecraft/server/level/ServerLevel;explode(Lnet/minecraft/world/entity/Entity;DDDFLnet/minecraft/world/level/Level$ExplosionInteraction;)V"),
-            index = 4
+                    target = "Lnet/minecraft/server/level/ServerLevel;explode(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/damagesource/DamageSource;Lnet/minecraft/world/level/ExplosionDamageCalculator;DDDFZLnet/minecraft/world/level/Level$ExplosionInteraction;)V"),
+            index = 6
     )
     private float sulfurcubesplus$sizeScaledExplosion(float power) {
         int size = ((SulfurCube)(Object)this).getSize();
