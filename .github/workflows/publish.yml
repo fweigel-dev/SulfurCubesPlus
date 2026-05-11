@@ -1,0 +1,37 @@
+name: publish
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+      - name: validate gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+      - name: setup jdk
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'oracle'
+      - name: make gradle wrapper executable
+        run: chmod +x ./gradlew
+      - name: build
+        run: ./gradlew build
+      - name: publish to modrinth and curseforge
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          modrinth-id: 7MGKLa7i
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          curseforge-id: 1507685
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+          files: build/libs/!(*-@(sources|javadoc)).jar
+          name: Sulfur Cubes+ ${{ github.event.release.tag_name }}
+          changelog: ${{ github.event.release.body }}
+          loaders: fabric
+          java: 25
