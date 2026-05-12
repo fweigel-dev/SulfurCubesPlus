@@ -35,3 +35,8 @@ jobs:
           changelog: ${{ github.event.release.body }}
           loaders: fabric
           java: 25
+          game-version-filter: releases,snapshots
+          # CurseForge does not support snapshot game versions. This pins the upload to the last stable
+          # Minecraft release so the mod stays visible and installable there during snapshot cycles.
+          # TODO: Update this value whenever a new stable Minecraft version is released.
+          curseforge-game-versions: 26.1.2
