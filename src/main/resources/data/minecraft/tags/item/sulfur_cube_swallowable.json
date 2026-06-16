@@ -5,6 +5,13 @@
     "#sulfurcubesplus:sulfur_cube_archetype/cactus",
     "#sulfurcubesplus:sulfur_cube_archetype/workstation",
     "#sulfurcubesplus:sulfur_cube_archetype/redstone",
-    "#sulfurcubesplus:sulfur_cube_archetype/dried_ghast"
+    "#sulfurcubesplus:sulfur_cube_archetype/dried_ghast",
+    "#sulfurcubesplus:sulfur_cube_archetype/heavy_core",
+    "#sulfurcubesplus:sulfur_cube_archetype/netherite",
+    "#sulfurcubesplus:sulfur_cube_archetype/powder_snow",
+    "#sulfurcubesplus:sulfur_cube_archetype/sponge",
+    "#sulfurcubesplus:sulfur_cube_archetype/command_block",
+    "#sulfurcubesplus:sulfur_cube_archetype/end_rod",
+    "#sulfurcubesplus:sulfur_cube_archetype/copper_bulb"
   ]
 }

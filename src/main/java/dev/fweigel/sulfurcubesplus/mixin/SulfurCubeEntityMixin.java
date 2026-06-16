@@ -1,12 +1,18 @@
 package dev.fweigel.sulfurcubesplus.mixin;
 
+import dev.fweigel.sulfurcubesplus.ICommandCube;
 import dev.fweigel.sulfurcubesplus.IGhastSoulHolder;
 import dev.fweigel.sulfurcubesplus.ILightHolder;
 import dev.fweigel.sulfurcubesplus.ISulfurCubeAnvilMenu;
+import dev.fweigel.sulfurcubesplus.OpenSulfurCubeCommandPayload;
+import dev.fweigel.sulfurcubesplus.PhantomCopperBlock;
+import dev.fweigel.sulfurcubesplus.SulfurCubeCommandBlock;
 import dev.fweigel.sulfurcubesplus.SulfurCubeEntityAccess;
 import dev.fweigel.sulfurcubesplus.SulfurCubesPlus;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -39,10 +45,18 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.BlockItemStateProperties;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.BucketPickup;
+import net.minecraft.world.level.block.CopperBulbBlock;
 import net.minecraft.world.level.block.DriedGhastBlock;
 import net.minecraft.world.level.block.LightBlock;
+import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.world.level.block.PowderSnowBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.BaseCommandBlock;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.AABB;
@@ -51,6 +65,8 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.tags.DamageTypeTags;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.util.Mth;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.damagesource.DamageType;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -65,7 +81,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(SulfurCube.class)
-public abstract class SulfurCubeEntityMixin implements ILightHolder, IGhastSoulHolder {
+public abstract class SulfurCubeEntityMixin implements ILightHolder, IGhastSoulHolder, ICommandCube {
 
     /** Tracks the block position where we last placed a light block, for cleanup on move/remove. */
     @Unique
@@ -98,6 +114,33 @@ public abstract class SulfurCubeEntityMixin implements ILightHolder, IGhastSoulH
     /** Permanently true once this cube has gone through a soul-mode cycle; prevents re-use. */
     @Unique
     private boolean sulfurcubesplus$hasBeenSoulMode = false;
+
+    /** True while a Heavy-Core-carrying cube has a locked horizontal anchor (immovable). */
+    @Unique
+    private boolean sulfurcubesplus$hasHeavyAnchor = false;
+
+    /** Locked X/Z the immovable Heavy-Core cube is pinned to (Y stays free for gravity). */
+    @Unique
+    private double sulfurcubesplus$heavyAnchorX = 0.0;
+
+    @Unique
+    private double sulfurcubesplus$heavyAnchorZ = 0.0;
+
+    /** Lazily-created command block backing a command-block-carrying cube. */
+    @Unique
+    private SulfurCubeCommandBlock sulfurcubesplus$commandBlock = null;
+
+    /** Previous redstone-powered state, so the command runs once per rising edge. */
+    @Unique
+    private boolean sulfurcubesplus$wasCommandPowered = false;
+
+    /** Position of the phantom light/comparator block placed for a lit copper-bulb cube. */
+    @Unique
+    private BlockPos sulfurcubesplus$lastCopperPos = null;
+
+    /** Previous redstone-powered state, so a copper bulb toggles once per rising edge. */
+    @Unique
+    private boolean sulfurcubesplus$wasCopperPowered = false;
 
     @Unique
     private static final TagKey<DamageType> SULFURCUBESPLUS$CACTUS_PUSH = TagKey.create(
@@ -254,6 +297,11 @@ public abstract class SulfurCubeEntityMixin implements ILightHolder, IGhastSoulH
             sulfurcubesplus$lastLightPos = null;
         }
 
+        if (sulfurcubesplus$lastCopperPos != null) {
+            sulfurcubesplus$removeCopperAt(level, sulfurcubesplus$lastCopperPos);
+            sulfurcubesplus$lastCopperPos = null;
+        }
+
         if (sulfurcubesplus$lastRedstonePositions != null) {
             for (BlockPos pos : sulfurcubesplus$lastRedstonePositions) {
                 sulfurcubesplus$removeRedstoneAt(level, pos);
@@ -364,7 +412,7 @@ public abstract class SulfurCubeEntityMixin implements ILightHolder, IGhastSoulH
         AABB box = self.getBoundingBox();
         List<LivingEntity> nearby = level.getEntitiesOfClass(LivingEntity.class, box, e -> e != self);
         for (LivingEntity entity : nearby) {
-            entity.hurt(level.damageSources().cactus(), 1.0f);
+            entity.hurtServer(level, level.damageSources().cactus(), 1.0f);
             // SulfurCubes are immune to cactus damage when carrying a block, and even
             // non-immune cubes get no knockback since cactus has no attacker entity.
             // Push any neighbouring SulfurCube away explicitly.
@@ -394,7 +442,7 @@ public abstract class SulfurCubeEntityMixin implements ILightHolder, IGhastSoulH
 
         Entity attacker = source.getDirectEntity();
         if (attacker instanceof LivingEntity livingAttacker) {
-            livingAttacker.hurt(level.damageSources().cactus(), 1.0f);
+            livingAttacker.hurtServer(level, level.damageSources().cactus(), 1.0f);
         }
     }
 
@@ -623,6 +671,270 @@ public abstract class SulfurCubeEntityMixin implements ILightHolder, IGhastSoulH
     }
 
     /**
+     * Each server tick: a Heavy-Core-carrying cube becomes an immovable anchor. It cannot hop,
+     * be knocked back, or be shoved horizontally by mobs, water, or pistons. Gravity still
+     * applies, so the cube falls and re-settles if the ground beneath it is removed.
+     */
+    @Inject(method = "customServerAiStep", at = @At("HEAD"))
+    private void sulfurcubesplus$tickHeavyCoreAnchor(ServerLevel level, CallbackInfo ci) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+        if (bodyItem.isEmpty() || !bodyItem.is(Items.HEAVY_CORE)) {
+            sulfurcubesplus$hasHeavyAnchor = false;
+            return;
+        }
+
+        // (Re)establish the horizontal anchor whenever the cube is resting on the ground, so it
+        // locks onto wherever it lands rather than the spot it was first given the core.
+        if (!sulfurcubesplus$hasHeavyAnchor || self.onGround()) {
+            sulfurcubesplus$heavyAnchorX = self.getX();
+            sulfurcubesplus$heavyAnchorZ = self.getZ();
+            sulfurcubesplus$hasHeavyAnchor = true;
+        }
+
+        // Cancel hopping and any incoming knockback: zero horizontal motion and any upward
+        // motion. A downward velocity is preserved so gravity can still pull the cube down.
+        Vec3 velocity = self.getDeltaMovement();
+        self.setDeltaMovement(0.0, Math.min(0.0, velocity.y), 0.0);
+
+        // Pin the horizontal position; Y stays free so the cube can still fall when unsupported.
+        self.setPos(sulfurcubesplus$heavyAnchorX, self.getY(), sulfurcubesplus$heavyAnchorZ);
+    }
+
+    /**
+     * Body items that make the cube immune to lava and fire. Netherite mirrors how netherite
+     * items survive lava in vanilla; sponges need it so a wet sponge can dip into lava to dry
+     * out (see {@link #sulfurcubesplus$tickSponge}) without the cube burning up.
+     */
+    @Unique
+    private static boolean sulfurcubesplus$isLavaImmuneBody(ItemStack bodyItem) {
+        return bodyItem.is(Items.NETHERITE_BLOCK)
+                || bodyItem.is(Items.SPONGE)
+                || bodyItem.is(Items.WET_SPONGE);
+    }
+
+    /**
+     * A cube carrying a lava-immune body item takes no lava or fire damage. Cancels the damage
+     * entirely before it applies.
+     */
+    @Inject(method = "hurtServer", at = @At("HEAD"), cancellable = true)
+    private void sulfurcubesplus$lavaImmunity(
+            ServerLevel level, DamageSource source, float amount,
+            CallbackInfoReturnable<Boolean> cir) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+        if (bodyItem.isEmpty() || !sulfurcubesplus$isLavaImmuneBody(bodyItem)) {
+            return;
+        }
+        if (source.is(DamageTypeTags.IS_FIRE)) {
+            cir.setReturnValue(false); // no damage taken
+        }
+    }
+
+    /**
+     * Each server tick: keep a Netherite-Block cube from showing flames at all (netherite is the
+     * only body that suppresses the fire visual; sponges stay immune to damage but still burn
+     * visibly).
+     */
+    @Inject(method = "customServerAiStep", at = @At("HEAD"))
+    private void sulfurcubesplus$clearFireOnNetherite(ServerLevel level, CallbackInfo ci) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+        if (!bodyItem.isEmpty() && bodyItem.is(Items.NETHERITE_BLOCK)
+                && self.getRemainingFireTicks() > 0) {
+            self.setRemainingFireTicks(0);
+        }
+    }
+
+    /**
+     * Each server tick: a Netherite-Block cube floats on the surface of lava (but NOT water) by
+     * replicating vanilla's buoyancy push for the lava fluid only. Server-side is enough since a
+     * mob's position is server-authoritative.
+     */
+    @Inject(method = "customServerAiStep", at = @At("HEAD"))
+    private void sulfurcubesplus$netheriteLavaFloat(ServerLevel level, CallbackInfo ci) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+        if (bodyItem.isEmpty() || !bodyItem.is(Items.NETHERITE_BLOCK) || !self.isInLava()) {
+            return;
+        }
+        float bob = Mth.sin(self.tickCount * 0.4f) * 0.2f;
+        double rise = self.getFluidHeight(FluidTags.LAVA) - self.getFluidJumpThreshold() + bob;
+        if (rise > 0.0) {
+            self.setDeltaMovement(self.getDeltaMovement()
+                    .add(0.0, Math.min(1.0, rise) * 0.04, 0.0));
+        }
+    }
+
+    // ── Copper bulb ───────────────────────────────────────────────────────────
+
+    @Unique
+    private static boolean sulfurcubesplus$isCopperBulb(ItemStack stack) {
+        return stack.getItem() instanceof BlockItem blockItem
+                && blockItem.getBlock() instanceof CopperBulbBlock;
+    }
+
+    @Unique
+    private static boolean sulfurcubesplus$isBulbLit(ItemStack stack) {
+        return Boolean.TRUE.equals(stack
+                .getOrDefault(DataComponents.BLOCK_STATE, BlockItemStateProperties.EMPTY)
+                .get(CopperBulbBlock.LIT));
+    }
+
+    /** Flips a copper-bulb cube's lit state, syncing the rendered block and playing the sound. */
+    @Unique
+    private void sulfurcubesplus$toggleBulb(SulfurCube self, ItemStack bodyItem) {
+        boolean newLit = !sulfurcubesplus$isBulbLit(bodyItem);
+        ItemStack toggled = bodyItem.copy();
+        BlockItemStateProperties props = toggled.getOrDefault(
+                DataComponents.BLOCK_STATE, BlockItemStateProperties.EMPTY);
+        toggled.set(DataComponents.BLOCK_STATE, props.with(CopperBulbBlock.LIT, newLit));
+        self.setItemSlot(EquipmentSlot.BODY, toggled);
+        self.level().playSound(null, self.blockPosition(),
+                newLit ? SoundEvents.COPPER_BULB_TURN_ON : SoundEvents.COPPER_BULB_TURN_OFF,
+                SoundSource.BLOCKS, 1.0f, 1.0f);
+    }
+
+    /**
+     * Each server tick: a copper-bulb cube toggles on a redstone rising edge (like a real copper
+     * bulb), and while lit maintains a phantom block at its position that both emits the bulb's
+     * light and answers comparators.
+     */
+    @Inject(method = "customServerAiStep", at = @At("HEAD"))
+    private void sulfurcubesplus$tickCopperBulb(ServerLevel level, CallbackInfo ci) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+
+        if (bodyItem.isEmpty() || !sulfurcubesplus$isCopperBulb(bodyItem)) {
+            if (sulfurcubesplus$lastCopperPos != null) {
+                sulfurcubesplus$removeCopperAt(level, sulfurcubesplus$lastCopperPos);
+                sulfurcubesplus$lastCopperPos = null;
+            }
+            sulfurcubesplus$wasCopperPowered = false;
+            return;
+        }
+
+        // Redstone rising edge toggles the bulb.
+        boolean powered = level.getBestOwnOrNeighbourSignal(self.blockPosition()) > 0;
+        if (powered && !sulfurcubesplus$wasCopperPowered) {
+            sulfurcubesplus$toggleBulb(self, bodyItem);
+            bodyItem = self.getItemBySlot(EquipmentSlot.BODY); // refresh after toggle
+        }
+        sulfurcubesplus$wasCopperPowered = powered;
+
+        BlockPos pos = self.blockPosition();
+        if (sulfurcubesplus$isBulbLit(bodyItem)) {
+            int emission = ((BlockItem) bodyItem.getItem()).getBlock()
+                    .defaultBlockState().setValue(CopperBulbBlock.LIT, true).getLightEmission();
+            BlockState existing = level.getBlockState(pos);
+            if (existing.isAir() || existing.is(SulfurCubesPlus.PHANTOM_COPPER_BLOCK)) {
+                level.setBlock(pos, SulfurCubesPlus.PHANTOM_COPPER_BLOCK.defaultBlockState()
+                        .setValue(PhantomCopperBlock.LEVEL, Math.min(15, emission)), 3);
+                if (sulfurcubesplus$lastCopperPos != null
+                        && !sulfurcubesplus$lastCopperPos.equals(pos)) {
+                    sulfurcubesplus$removeCopperAt(level, sulfurcubesplus$lastCopperPos);
+                }
+                sulfurcubesplus$lastCopperPos = pos.immutable();
+            }
+        } else if (sulfurcubesplus$lastCopperPos != null) {
+            sulfurcubesplus$removeCopperAt(level, sulfurcubesplus$lastCopperPos);
+            sulfurcubesplus$lastCopperPos = null;
+        }
+    }
+
+    @Unique
+    private static void sulfurcubesplus$removeCopperAt(ServerLevel level, BlockPos pos) {
+        if (level.isLoaded(pos) && level.getBlockState(pos).is(SulfurCubesPlus.PHANTOM_COPPER_BLOCK)) {
+            level.removeBlock(pos, false);
+        }
+    }
+
+    /** Hitting a copper-bulb cube toggles it on/off (the hit otherwise applies as normal). */
+    @Inject(method = "hurtServer", at = @At("HEAD"))
+    private void sulfurcubesplus$copperBulbOnHit(
+            ServerLevel level, DamageSource source, float amount,
+            CallbackInfoReturnable<Boolean> cir) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+        if (!bodyItem.isEmpty() && sulfurcubesplus$isCopperBulb(bodyItem)
+                && source.getDirectEntity() instanceof Player) {
+            sulfurcubesplus$toggleBulb(self, bodyItem);
+        }
+    }
+
+    /**
+     * Each server tick: a Sponge-carrying cube acts like a sponge block. A dry sponge soaks up
+     * nearby water (using vanilla's own breadth-first search) and turns into a wet sponge; a wet
+     * sponge dries back to a dry sponge when it touches lava (it survives thanks to its lava
+     * immunity), so it can be reused to clear more water.
+     */
+    @Inject(method = "customServerAiStep", at = @At("HEAD"))
+    private void sulfurcubesplus$tickSponge(ServerLevel level, CallbackInfo ci) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+        if (bodyItem.isEmpty()) return;
+
+        if (bodyItem.is(Items.SPONGE)) {
+            if (sulfurcubesplus$absorbWaterAround(level, self.blockPosition())) {
+                self.setItemSlot(EquipmentSlot.BODY, new ItemStack(Items.WET_SPONGE));
+                level.playSound(null, self.getX(), self.getY(), self.getZ(),
+                        SoundEvents.SPONGE_ABSORB, SoundSource.BLOCKS, 1.0f, 1.0f);
+            }
+        } else if (bodyItem.is(Items.WET_SPONGE) && self.isInLava()) {
+            self.setItemSlot(EquipmentSlot.BODY, new ItemStack(Items.SPONGE));
+            level.playSound(null, self.getX(), self.getY(), self.getZ(),
+                    SoundEvents.FIRE_EXTINGUISH, SoundSource.BLOCKS, 0.7f, 1.6f);
+            level.sendParticles(ParticleTypes.LARGE_SMOKE,
+                    self.getX(), self.getY() + self.getBbHeight() * 0.5, self.getZ(),
+                    8, 0.3, 0.3, 0.3, 0.0);
+        }
+    }
+
+    /**
+     * Removes water around {@code origin} exactly like a placed sponge block: a breadth-first
+     * search up to 6 blocks deep, draining waterlogged blocks, clearing water source/flow blocks,
+     * and dropping kelp/seagrass. Returns true if any water was removed.
+     */
+    @Unique
+    private static boolean sulfurcubesplus$absorbWaterAround(ServerLevel level, BlockPos origin) {
+        return BlockPos.breadthFirstTraversal(
+                origin, 6, 65,
+                (pos, consumer) -> {
+                    for (Direction dir : Direction.values()) {
+                        consumer.accept(pos.relative(dir));
+                    }
+                },
+                pos -> {
+                    if (pos.equals(origin)) {
+                        return BlockPos.TraversalNodeStatus.ACCEPT;
+                    }
+                    BlockState state = level.getBlockState(pos);
+                    if (!level.getFluidState(pos).is(FluidTags.WATER)) {
+                        return BlockPos.TraversalNodeStatus.SKIP;
+                    }
+                    Block block = state.getBlock();
+                    if (block instanceof BucketPickup bucketPickup
+                            && !bucketPickup.pickupBlock(null, level, pos, state).isEmpty()) {
+                        return BlockPos.TraversalNodeStatus.ACCEPT;
+                    }
+                    if (block instanceof LiquidBlock) {
+                        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+                        return BlockPos.TraversalNodeStatus.ACCEPT;
+                    }
+                    if (state.is(Blocks.KELP) || state.is(Blocks.KELP_PLANT)
+                            || state.is(Blocks.SEAGRASS) || state.is(Blocks.TALL_SEAGRASS)) {
+                        BlockEntity blockEntity = state.hasBlockEntity()
+                                ? level.getBlockEntity(pos) : null;
+                        Block.dropResources(state, level, pos, blockEntity);
+                        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+                        return BlockPos.TraversalNodeStatus.ACCEPT;
+                    }
+                    return BlockPos.TraversalNodeStatus.SKIP;
+                }
+        ) > 1;
+    }
+
+    /**
      * Each server tick: when carrying a dried ghast and submerged/in rain, count toward the
      * next hydration stage using the same delay as the vanilla DriedGhastBlock. Also keeps the
      * body-item's BLOCK_STATE component in sync so the correct hydration-level texture shows
@@ -764,6 +1076,154 @@ public abstract class SulfurCubeEntityMixin implements ILightHolder, IGhastSoulH
         return Vec3.ZERO;
     }
 
+    /**
+     * A Powder-Snow-carrying cube can be stood on like a Happy Ghast — but only by entities that
+     * vanilla lets walk on powder snow: players (and other living mobs) wearing leather boots,
+     * plus powder-snow-walkable mobs such as rabbits and foxes. Everyone else passes through, the
+     * same as a normal cube. Reusing canEntityWalkOnPowderSnow keeps the rule identical to a real
+     * powder snow block.
+     *
+     * Plain method (no @Inject/@Override): Mixin merges it into SulfurCube, overriding the
+     * inherited Entity.canBeCollidedWith. Runs on client and server so collision stays in sync.
+     */
+    public boolean canBeCollidedWith(Entity entity) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+        return entity != null
+                && !bodyItem.isEmpty()
+                && bodyItem.is(Items.POWDER_SNOW_BUCKET)
+                && PowderSnowBlock.canEntityWalkOnPowderSnow(entity);
+    }
+
+    /**
+     * Standing on or bumping a Powder-Snow cube must not shove it around — it is a platform.
+     * Vanilla's SulfurCube.playerPush launches the cube away from touching players (the explosive
+     * knockback behaviour); cancel it while the cube carries powder snow so it stays put.
+     */
+    @Inject(method = "playerPush", at = @At("HEAD"), cancellable = true)
+    private void sulfurcubesplus$powderSnowStaysPut(Player player, CallbackInfo ci) {
+        SulfurCube self = (SulfurCube) (Object) this;
+        ItemStack bodyItem = self.getItemBySlot(EquipmentSlot.BODY);
+        if (!bodyItem.isEmpty() && bodyItem.is(Items.POWDER_SNOW_BUCKET)) {
+            ci.cancel();
+        }
+    }
+
+    // ── ICommandCube ──────────────────────────────────────────────────────────
+
+    @Override
+    public BaseCommandBlock sulfurcubesplus$getCommandBlock() {
+        if (sulfurcubesplus$commandBlock == null) {
+            sulfurcubesplus$commandBlock = new SulfurCubeCommandBlock((SulfurCube) (Object) this);
+        }
+        return sulfurcubesplus$commandBlock;
+    }
+
+    @Override
+    public boolean sulfurcubesplus$isCommandCube() {
+        ItemStack bodyItem = ((SulfurCube) (Object) this).getItemBySlot(EquipmentSlot.BODY);
+        // Only the plain command block — not the repeating/chain variants.
+        return !bodyItem.isEmpty() && bodyItem.is(Items.COMMAND_BLOCK);
+    }
+
+    /** Run the command on the rising edge of a redstone signal, like a real command block. */
+    @Inject(method = "customServerAiStep", at = @At("HEAD"))
+    private void sulfurcubesplus$tickCommandCubeRedstone(ServerLevel level, CallbackInfo ci) {
+        if (!sulfurcubesplus$isCommandCube()) {
+            sulfurcubesplus$wasCommandPowered = false;
+            return;
+        }
+        SulfurCube self = (SulfurCube) (Object) this;
+        boolean powered = level.getBestOwnOrNeighbourSignal(self.blockPosition()) > 0;
+        if (powered && !sulfurcubesplus$wasCommandPowered) {
+            sulfurcubesplus$getCommandBlock().performCommand(level);
+        }
+        sulfurcubesplus$wasCommandPowered = powered;
+    }
+
+    /**
+     * Hitting a command cube runs its command. Survival players cannot destroy it (the damage is
+     * cancelled) — only an op in creative can both trigger and remove it.
+     */
+    @Inject(method = "hurtServer", at = @At("HEAD"), cancellable = true)
+    private void sulfurcubesplus$commandCubeOnHit(
+            ServerLevel level, DamageSource source, float amount,
+            CallbackInfoReturnable<Boolean> cir) {
+        if (!sulfurcubesplus$isCommandCube()) return;
+
+        // Only a direct hit from a player counts, so fire/lava/suffocation don't spam it.
+        if (!(source.getDirectEntity() instanceof Player player)) {
+            cir.setReturnValue(false); // immune to environmental damage too
+            return;
+        }
+
+        sulfurcubesplus$getCommandBlock().performCommand(level);
+
+        if (!player.canUseGameMasterBlocks()) {
+            cir.setReturnValue(false); // protected from destruction in survival
+        }
+    }
+
+    /**
+     * Right-clicking a command cube:
+     *   - Survival players are blocked entirely (no pickup, no swapping its block, no UI).
+     *   - Ops in creative open the command-edit screen with an empty hand, but any held item still
+     *     passes through to vanilla — so shears drop the command block, a bucket scoops up the
+     *     cube, and a swallowable block swaps it. That lets creative players take the block out.
+     */
+    @Inject(method = "mobInteract", at = @At("HEAD"), cancellable = true)
+    private void sulfurcubesplus$commandCubeInteract(
+            Player player, InteractionHand hand,
+            CallbackInfoReturnable<InteractionResult> cir) {
+        if (hand != InteractionHand.MAIN_HAND) return;
+        if (!sulfurcubesplus$isCommandCube()) return;
+
+        if (!player.canUseGameMasterBlocks()) {
+            cir.setReturnValue(InteractionResult.PASS); // no pickup / swap / UI in survival
+            return;
+        }
+
+        // Anything in hand (shears, bucket, a swap block, …) is handled by vanilla so the cube can
+        // be picked up or have its block removed in creative.
+        if (!player.getItemInHand(hand).isEmpty()) {
+            return;
+        }
+
+        cir.setReturnValue(InteractionResult.SUCCESS);
+        if (player instanceof ServerPlayer serverPlayer) {
+            BaseCommandBlock commandBlock = sulfurcubesplus$getCommandBlock();
+            ServerPlayNetworking.send(serverPlayer, new OpenSulfurCubeCommandPayload(
+                    ((SulfurCube) (Object) this).getId(),
+                    commandBlock.getCommand(),
+                    commandBlock.isTrackOutput()));
+        }
+    }
+
+    /** Persist a command cube's command into the bucket so it survives being picked up. */
+    @Inject(method = "saveToBucketTag", at = @At("TAIL"))
+    private void sulfurcubesplus$saveCommandToBucket(ItemStack stack, CallbackInfo ci) {
+        if (sulfurcubesplus$commandBlock == null
+                || sulfurcubesplus$commandBlock.getCommand().isEmpty()) {
+            return;
+        }
+        CustomData.update(DataComponents.BUCKET_ENTITY_DATA, stack, tag -> {
+            tag.putString("sulfurcubesplus_command", sulfurcubesplus$commandBlock.getCommand());
+            tag.putBoolean("sulfurcubesplus_command_track",
+                    sulfurcubesplus$commandBlock.isTrackOutput());
+        });
+    }
+
+    /** Restore the command from the bucket when the cube is released. */
+    @Inject(method = "loadFromBucketTag", at = @At("TAIL"))
+    private void sulfurcubesplus$loadCommandFromBucket(CompoundTag tag, CallbackInfo ci) {
+        String command = tag.getStringOr("sulfurcubesplus_command", "");
+        if (!command.isEmpty()) {
+            BaseCommandBlock commandBlock = sulfurcubesplus$getCommandBlock();
+            commandBlock.setCommand(command);
+            commandBlock.setTrackOutput(tag.getBooleanOr("sulfurcubesplus_command_track", true));
+        }
+    }
+
     /** Consumes a dried ghast, spawns a baby happy ghast, and enters soul mode. */
     @Unique
     private void sulfurcubesplus$transformToGhastSoul(SulfurCube self, ServerLevel level) {
@@ -829,10 +1289,16 @@ public abstract class SulfurCubeEntityMixin implements ILightHolder, IGhastSoulH
                         sulfurcubesplus$linkedGhastUuid.getLeastSignificantBits());
             }
         }
+        if (sulfurcubesplus$commandBlock != null
+                && !sulfurcubesplus$commandBlock.getCommand().isEmpty()) {
+            sulfurcubesplus$commandBlock.save(out.child("sulfurcubesplus_command"));
+        }
     }
 
     @Inject(method = "readAdditionalSaveData", at = @At("TAIL"))
     private void sulfurcubesplus$loadGhastData(ValueInput in, CallbackInfo ci) {
+        in.child("sulfurcubesplus_command").ifPresent(
+                child -> sulfurcubesplus$getCommandBlock().load(child));
         sulfurcubesplus$hydrationStage = in.getIntOr("sulfurcubesplus_hydration_stage", 0);
         sulfurcubesplus$hydrationTicks = in.getIntOr("sulfurcubesplus_hydration_ticks", 0);
         sulfurcubesplus$hasBeenSoulMode = in.getBooleanOr("sulfurcubesplus_been_soul", false);

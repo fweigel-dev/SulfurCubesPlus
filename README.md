@@ -107,4 +107,10 @@ A cube that has already completed a soul cycle cannot re-hydrate.
 
 ---
 
+### Other Supported Blocks with functionality:
+
+Command Block · Heavy Core · Netherite Block · Powdered Snow · Sponge · Wet Sponge · End Rod · Copper Bulb (all variants)
+
+---
+
 Support for more blocks coming in the future

@@ -18,6 +18,9 @@
 	"entrypoints": {
 		"main": [
 			"dev.fweigel.sulfurcubesplus.SulfurCubesPlus"
+		],
+		"client": [
+			"dev.fweigel.sulfurcubesplus.client.SulfurCubesPlusClient"
 		]
 	},
 	"mixins": [
