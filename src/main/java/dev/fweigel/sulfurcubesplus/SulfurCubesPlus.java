@@ -55,7 +55,7 @@ public class SulfurCubesPlus implements ModInitializer {
                         .noOcclusion()
                         .replaceable()
                         .instabreak()
-                        .pushReaction(PushReaction.DESTROY)
+                        .pushReaction(PushReaction.POPPED)
                         .setId(phantomKey)
                 )
         );
@@ -73,7 +73,7 @@ public class SulfurCubesPlus implements ModInitializer {
                         .noOcclusion()
                         .replaceable()
                         .instabreak()
-                        .pushReaction(PushReaction.DESTROY)
+                        .pushReaction(PushReaction.POPPED)
                         .lightLevel(state -> state.getValue(PhantomCopperBlock.LEVEL))
                         .setId(copperKey)
                 )

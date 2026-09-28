@@ -32,8 +32,6 @@ public class SulfurCubeCommandBlock extends net.minecraft.world.level.BaseComman
                 cube.getRotationVector(),
                 level,
                 LevelBasedPermissionSet.GAMEMASTER,
-                this.getName().getString(),
-                cube.getDisplayName(),
                 level.getServer(),
                 cube);
     }
