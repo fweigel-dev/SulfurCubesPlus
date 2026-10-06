@@ -1,0 +1,60 @@
+name: sync-readme-modrinth
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'README/**'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+      - name: sync README.md to Modrinth description
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          MODRINTH_ID: 7MGKLa7i
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
+
+          project_id = os.environ["MODRINTH_ID"]
+          token = os.environ["MODRINTH_TOKEN"]
+          base = f"https://api.modrinth.com/v2/project/{project_id}"
+          headers = {
+              "Authorization": token,
+              "User-Agent": "fweigel-dev/SulfurCubesPlus-sync-readme (github-action)",
+          }
+
+          with open("README.md", encoding="utf-8") as f:
+              readme = f.read()
+
+          req = urllib.request.Request(base, headers=headers, method="GET")
+          with urllib.request.urlopen(req, timeout=30) as resp:
+              current = json.load(resp).get("body", "") or ""
+
+          if current.strip() == readme.strip():
+              print("README unchanged on Modrinth, skipping update.")
+              sys.exit(0)
+
+          payload = json.dumps({"body": readme}).encode("utf-8")
+          req = urllib.request.Request(
+              base,
+              data=payload,
+              headers={**headers, "Content-Type": "application/json"},
+              method="PATCH",
+          )
+          with urllib.request.urlopen(req, timeout=30) as resp:
+              print(f"Modrinth description updated: HTTP {resp.status}")
+          PY
